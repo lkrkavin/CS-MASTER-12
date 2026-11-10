@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
@@ -102,7 +102,7 @@ def google_sign_in(payload: GoogleSignInRequest):
     return {"authenticated": True, "user": save_student_profile(claims)}
 
 @app.get("/api/v1/me")
-def get_current_student(authorization: str | None = None):
+def get_current_student(authorization: str | None = Header(default=None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="A Google ID token is required.")
     claims = verify_google_id_token(authorization.removeprefix("Bearer ").strip())
