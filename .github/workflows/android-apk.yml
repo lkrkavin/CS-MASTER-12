@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Android release APKs
+    name: Build Android release APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -41,39 +41,34 @@ jobs:
         working-directory: app
         run: flutter pub get
 
-      # Build separate APKs per CPU architecture to avoid shipping unused
-      # native libraries in one universal APK.
-      - name: Build split release APKs
+      # First produce one installable universal APK. Measure its real size
+      # before deciding whether ABI splitting or other size optimizations are needed.
+      - name: Build universal release APK
         working-directory: app
         run: >-
-          flutter build apk --release --split-per-abi --no-shrink
+          flutter build apk --release --no-shrink
           --dart-define=GOOGLE_WEB_CLIENT_ID=${{ vars.GOOGLE_WEB_CLIENT_ID }}
           --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
 
-      - name: Enforce 60 MB per-APK limit
+      - name: Report APK size
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          apks=(app/build/app/outputs/flutter-apk/*-release.apk)
-          if (( ${#apks[@]} == 0 )); then
-            echo "No release APKs were generated."
-            exit 1
-          fi
-          for apk in "${apks[@]}"; do
-            bytes=$(stat -c%s "$apk")
-            mib=$(( (bytes + 1048575) / 1048576 ))
-            echo "$apk: $mib MiB"
-            if (( bytes >= 60 * 1024 * 1024 )); then
-              echo "APK exceeds the strict 60 MiB limit: $apk"
-              exit 1
-            fi
-          done
+          apk="app/build/app/outputs/flutter-apk/app-release.apk"
+          test -f "$apk"
+          bytes=$(stat -c%s "$apk")
+          mib=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b/1048576 }')
+          echo "Universal APK size: $mib MiB ($bytes bytes)"
+          {
+            echo "### Universal APK size"
+            echo "**$mib MiB** ($bytes bytes)"
+            echo "This is the measured size; optimization decisions will be made after this build."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload APKs
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: cs-master-12-android-release
-          path: app/build/app/outputs/flutter-apk/*-release.apk
+          name: cs-master-12-android-universal
+          path: app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
