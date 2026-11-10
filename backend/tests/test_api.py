@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app import main
 from app.main import app
 
 client = TestClient(app)
@@ -21,3 +22,32 @@ def test_unknown_subject_is_reported():
     response = client.get("/api/v1/curriculum/not-a-subject")
     assert response.status_code == 200
     assert response.json()["error"] == "Unknown subject"
+
+
+def test_google_sign_in_verifies_and_saves_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "database_path", lambda: tmp_path / "students.db")
+    monkeypatch.setattr(
+        main,
+        "verify_google_id_token",
+        lambda token: {
+            "sub": "google-user-123",
+            "email": "student@example.com",
+            "name": "CS Student",
+            "picture": None,
+        },
+    )
+
+    response = client.post("/api/v1/auth/google", json={"id_token": "a" * 30})
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is True
+    assert response.json()["user"]["email"] == "student@example.com"
+
+
+def test_google_sign_in_rejects_short_token():
+    response = client.post("/api/v1/auth/google", json={"id_token": "short"})
+    assert response.status_code == 422
+
+
+def test_me_requires_authorization_header():
+    response = client.get("/api/v1/me")
+    assert response.status_code == 401
