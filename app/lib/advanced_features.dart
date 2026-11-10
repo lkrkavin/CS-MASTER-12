@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use, prefer_interpolation_to_compose_strings
 import 'dart:convert';
+import 'class12_course.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -14,6 +15,7 @@ class AdvancedHub extends StatelessWidget {
   Text('Your complete CS workspace',style:Theme.of(c).textTheme.headlineSmall),
   const Text('Study, practise, review and track your learning. Cloud AI needs backend configuration.'),
   _tile(c,'Progress dashboard','Local completed-topic checklist and XP',Icons.insights,const ProgressPage()),
+  _tile(c,'Class XII Tech Quest','Book-aligned Python, SQL, networks, Django and 17 XP missions',Icons.rocket_launch,const Class12CoursePage()),
   _tile(c,'AI CS tutor','Ask Python, SQL and integration questions',Icons.auto_awesome,const TutorPage()),
   _tile(c,'Question scanner','Camera/gallery OCR with on-device recognition',Icons.document_scanner,const ScannerPage()),
   _tile(c,'Coding practice lab','Predict Python output and reason about SQL',Icons.terminal,const CodingPage()),
