@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use, prefer_interpolation_to_compose_strings
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
