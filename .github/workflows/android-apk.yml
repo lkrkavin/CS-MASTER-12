@@ -37,16 +37,58 @@ jobs:
         working-directory: app
         run: flutter create --platforms=android --org com.lkrkavin --project-name cs_master_12 .
 
+      # google_mlkit_text_recognition references all five script option classes.
+      # The Flutter plugin's default Android dependency only bundles Latin;
+      # declare the four additional ML Kit artifacts to satisfy R8.
+      - name: Add ML Kit script dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          candidates = [
+              Path("app/android/app/build.gradle.kts"),
+              Path("app/android/app/build.gradle"),
+          ]
+          gradle_file = next((p for p in candidates if p.is_file()), None)
+          if gradle_file is None:
+              raise SystemExit("Could not find generated Android app Gradle file")
+
+          text = gradle_file.read_text()
+          artifacts = [
+              "text-recognition-chinese",
+              "text-recognition-devanagari",
+              "text-recognition-japanese",
+              "text-recognition-korean",
+          ]
+          missing = [a for a in artifacts if f"com.google.mlkit:{a}" not in text]
+          if missing:
+              if gradle_file.suffix == ".kts":
+                  lines = "\n".join(
+                      f'    implementation("com.google.mlkit:{a}:16.0.1")'
+                      for a in missing
+                  )
+              else:
+                  lines = "\n".join(
+                      f"    implementation 'com.google.mlkit:{a}:16.0.1'"
+                      for a in missing
+                  )
+              gradle_file.write_text(
+                  text.rstrip() + "\n\n// Additional Google ML Kit OCR script models\ndependencies {\n"
+                  + lines + "\n}\n"
+              )
+          print(f"Configured ML Kit OCR dependencies in {gradle_file}")
+          PY
+
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
 
-      # First produce one installable universal APK. Measure its real size
-      # before deciding whether ABI splitting or other size optimizations are needed.
       - name: Build universal release APK
         working-directory: app
         run: >-
-          flutter build apk --release --no-shrink
+          flutter build apk --release
           --dart-define=GOOGLE_WEB_CLIENT_ID=${{ vars.GOOGLE_WEB_CLIENT_ID }}
           --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
 
@@ -62,7 +104,7 @@ jobs:
           {
             echo "### Universal APK size"
             echo "**$mib MiB** ($bytes bytes)"
-            echo "This is the measured size; optimization decisions will be made after this build."
+            echo "Measured universal release APK size."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
