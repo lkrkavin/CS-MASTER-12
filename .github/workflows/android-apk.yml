@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Android release APK
+    name: Build Android release APKs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -41,20 +41,39 @@ jobs:
         working-directory: app
         run: flutter pub get
 
-      # --no-shrink disables R8 for this build. Avoid modifying generated
-      # Gradle files: current Flutter templates may not declare minification
-      # as an explicit true setting, so such a patch is brittle and unnecessary.
-      - name: Build release APK
+      # Build separate APKs per CPU architecture to avoid shipping unused
+      # native libraries in one universal APK.
+      - name: Build split release APKs
         working-directory: app
         run: >-
-          flutter build apk --release --no-shrink
+          flutter build apk --release --split-per-abi --no-shrink
           --dart-define=GOOGLE_WEB_CLIENT_ID=${{ vars.GOOGLE_WEB_CLIENT_ID }}
           --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
 
-      - name: Upload APK
+      - name: Enforce 60 MB per-APK limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/app/outputs/flutter-apk/*-release.apk)
+          if (( ${#apks[@]} == 0 )); then
+            echo "No release APKs were generated."
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            bytes=$(stat -c%s "$apk")
+            mib=$(( (bytes + 1048575) / 1048576 ))
+            echo "$apk: $mib MiB"
+            if (( bytes >= 60 * 1024 * 1024 )); then
+              echo "APK exceeds the strict 60 MiB limit: $apk"
+              exit 1
+            fi
+          done
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: cs-master-12-android-release
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          path: app/build/app/outputs/flutter-apk/*-release.apk
           if-no-files-found: error
           retention-days: 14
