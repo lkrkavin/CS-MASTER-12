@@ -1,12 +1,11 @@
-// ignore_for_file: deprecated_member_use
-
+// ignore_for_file: deprecated_member_use, prefer_interpolation_to_compose_strings
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
-const googleWebClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
-const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+const apiUrl = String.fromEnvironment('API_BASE_URL');
 
 void main() => runApp(const CsMasterApp());
 
@@ -16,26 +15,26 @@ class CsMasterApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'CS MASTER 12',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5267D8)), useMaterial3: true),
-    home: const LearningShell(),
+    theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff5267d8)), useMaterial3: true),
+    home: const Shell(),
   );
 }
 
-class LearningShell extends StatefulWidget {
-  const LearningShell({super.key});
+class Shell extends StatefulWidget {
+  const Shell({super.key});
   @override
-  State<LearningShell> createState() => _LearningShellState();
+  State<Shell> createState() => _ShellState();
 }
 
-class _LearningShellState extends State<LearningShell> {
+class _ShellState extends State<Shell> {
   int tab = 0;
   bool busy = false;
-  Map<String, dynamic>? student;
-  final google = GoogleSignIn(scopes: const ['email', 'profile'], serverClientId: googleWebClientId.isEmpty ? null : googleWebClientId);
+  String accountText = 'Guest learning mode';
+  final google = GoogleSignIn(scopes: const ['email', 'profile'], serverClientId: webClientId.isEmpty ? null : webClientId);
 
   Future<void> signIn() async {
-    if (googleWebClientId.isEmpty || apiBaseUrl.isEmpty) {
-      showAuth('Google sign-in needs two deployment settings: GOOGLE_WEB_CLIENT_ID (Web OAuth client ID) and API_BASE_URL (your deployed HTTPS Python API). Guest mode is ready now; all lessons and practice work without sign-in.');
+    if (webClientId.isEmpty || apiUrl.isEmpty) {
+      message('Google sign-in is not configured in this build. Add GOOGLE_WEB_CLIENT_ID and API_BASE_URL, deploy the FastAPI backend over HTTPS, and rebuild. Guest mode works now.');
       return;
     }
     setState(() => busy = true);
@@ -43,14 +42,14 @@ class _LearningShellState extends State<LearningShell> {
       final account = await google.signIn();
       if (account == null) return;
       final token = (await account.authentication).idToken;
-      if (token == null || token.isEmpty) throw Exception('No ID token returned. Check the Web OAuth client ID and Android SHA-1.');
+      if (token == null || token.isEmpty) throw Exception('No ID token. Check Web OAuth client ID and Android SHA-1.');
       final response = await http.post(
-        Uri.parse('${apiBaseUrl.replaceAll(RegExp(r'/+,
+        Uri.parse(apiUrl.replaceAll(RegExp(r'/+$'), '') + '/api/v1/auth/google'),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({'id_token': token}),
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
-        var detail = 'API sign-in failed (${response.statusCode}).';
+        var detail = 'API error ' + response.statusCode.toString();
         try {
           final data = jsonDecode(response.body);
           if (data is Map && data['detail'] != null) detail = data['detail'].toString();
@@ -58,54 +57,38 @@ class _LearningShellState extends State<LearningShell> {
         throw Exception(detail);
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      if (mounted) setState(() => student = Map<String, dynamic>.from(data['user'] as Map));
-    } catch (error) {
-      var message = error.toString().replaceFirst('Exception: ', '');
-      final lower = message.toLowerCase();
+      if (mounted) setState(() => accountText = 'Signed in: ' + (data['user']['name'] ?? 'Student').toString());
+    } catch (e) {
+      var detail = e.toString().replaceFirst('Exception: ', '');
+      final lower = detail.toLowerCase();
       if (lower.contains('developer_error') || lower.contains('sign_in_failed') || lower.contains('12500') || lower.contains('10:')) {
-        message = 'OAuth mismatch: verify Android package com.lkrkavin.cs_master_12, SHA-1 of the installed APK signing key, and the Web OAuth client ID.';
+        detail = 'OAuth mismatch. Check package com.lkrkavin.cs_master_12, APK signing SHA-1 and Web OAuth client ID.';
       } else if (lower.contains('socketexception') || lower.contains('connection refused') || lower.contains('failed host lookup')) {
-        message = 'Cannot reach the Python API. Check API_BASE_URL, HTTPS deployment and internet connection.';
-      } else if (lower.contains('timeout')) {
-        message = 'Python API timed out. Check whether your backend is running.';
+        detail = 'Cannot reach Python API. Check API_BASE_URL and HTTPS deployment.';
       }
-      if (mounted) showAuth(message);
+      if (mounted) message(detail);
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
-  void showAuth(String message) {
+  void message(String value) {
     showDialog<void>(context: context, builder: (context) => AlertDialog(
       title: const Text('Google sign-in'),
-      content: Text(message),
+      content: Text(value),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
     ));
   }
 
-  Future<void> signOut() async {
-    await google.signOut();
-    if (mounted) setState(() => student = null);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      HomePage(student: student, open: (value) => setState(() => tab = value)),
-      const PythonPage(),
-      const SqlPage(),
-      const IntegrationPage(),
-      const PracticePage(),
-    ];
+    final pages = [HomePage(open: (v) => setState(() => tab = v), account: accountText), const PythonPage(), const SqlPage(), const IntegrationPage(), const QuizPage()];
     return Scaffold(
       appBar: AppBar(title: const Text('CS MASTER 12'), actions: [
-        if (student != null)
-          IconButton(onPressed: signOut, icon: const Icon(Icons.logout), tooltip: 'Sign out')
-        else
-          IconButton(onPressed: busy ? null : signIn, icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.account_circle_outlined), tooltip: 'Google sign in'),
+        IconButton(onPressed: busy ? null : signIn, icon: busy ? const CircularProgressIndicator() : const Icon(Icons.account_circle_outlined)),
       ]),
       body: SafeArea(child: IndexedStack(index: tab, children: pages)),
-      bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (value) => setState(() => tab = value), destinations: const [
+      bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (v) => setState(() => tab = v), destinations: const [
         NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
         NavigationDestination(icon: Icon(Icons.code), label: 'Python'),
         NavigationDestination(icon: Icon(Icons.storage), label: 'SQL'),
@@ -117,134 +100,126 @@ class _LearningShellState extends State<LearningShell> {
 }
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.student, required this.open});
-  final Map<String, dynamic>? student;
+  const HomePage({super.key, required this.open, required this.account});
   final ValueChanged<int> open;
+  final String account;
   @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(18), children: [
+  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
     Text('Your Class 12 CS workspace', style: Theme.of(context).textTheme.headlineSmall),
     const SizedBox(height: 8),
-    const Text('Learn a concept, study a worked example, then test your understanding.'),
-    const SizedBox(height: 16),
-    Card(child: ListTile(leading: const Icon(Icons.school), title: Text(student == null ? 'Guest learning mode' : 'Signed in: ${student!['name'] ?? 'Student'}'), subtitle: Text(student == null ? 'All current lessons are available without Google sign-in.' : (student!['email'] ?? '').toString()))),
+    const Text('Learn the concept, study a worked example and practise it.'),
     const SizedBox(height: 12),
-    _AreaCard(title: 'Python', subtitle: 'Variables, conditions, loops, lists, functions, files and stacks.', icon: Icons.code, onTap: () => open(1)),
+    Card(child: ListTile(leading: const Icon(Icons.school), title: Text(account), subtitle: const Text('Lessons are available in offline guest mode.'))),
     const SizedBox(height: 10),
-    _AreaCard(title: 'SQL / MySQL', subtitle: 'Tables, INSERT, SELECT, filters, grouping, aggregates and joins.', icon: Icons.storage, onTap: () => open(2)),
+    _Area(title: 'Python', subtitle: 'Variables, operators, conditions, loops, collections, functions, files and stacks.', icon: Icons.code, tap: () => open(1)),
     const SizedBox(height: 10),
-    _AreaCard(title: 'Python + SQL', subtitle: 'Connect Python to MySQL, execute queries and fetch results.', icon: Icons.integration_instructions, onTap: () => open(3)),
+    _Area(title: 'SQL / MySQL', subtitle: 'Tables, INSERT, UPDATE, SELECT, filters, grouping, aggregates and joins.', icon: Icons.storage, tap: () => open(2)),
     const SizedBox(height: 10),
-    _AreaCard(title: 'Practice & quiz', subtitle: 'CBSE-style questions with instant answers and explanations.', icon: Icons.quiz_outlined, onTap: () => open(4)),
-    const SizedBox(height: 16),
-    const _Panel(title: 'Study method', body: 'Read → understand the example → predict the output → check the explanation → solve the quiz.'),
+    _Area(title: 'Python + SQL', subtitle: 'Connect Python to MySQL, execute queries, save changes and fetch records.', icon: Icons.integration_instructions, tap: () => open(3)),
     const SizedBox(height: 10),
-    const _Panel(title: 'What works now', body: 'Lessons and quiz run locally. Google account sync needs OAuth client IDs and a deployed backend. No cloud progress sync is claimed yet.'),
+    _Area(title: 'Practice & quiz', subtitle: 'Six starter questions with answers, explanations and scoring.', icon: Icons.quiz, tap: () => open(4)),
+    const SizedBox(height: 14),
+    const _Note(title: 'Study flow', body: 'Read → understand → predict the output → check the answer → practise.'),
   ]);
 }
 
-class _AreaCard extends StatelessWidget {
-  const _AreaCard({required this.title, required this.subtitle, required this.icon, required this.onTap});
+class _Area extends StatelessWidget {
+  const _Area({required this.title, required this.subtitle, required this.icon, required this.tap});
   final String title, subtitle;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback tap;
   @override
   Widget build(BuildContext context) => Card(child: ListTile(
-    contentPadding: const EdgeInsets.all(16),
     leading: CircleAvatar(child: Icon(icon)),
-    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-    subtitle: Padding(padding: const EdgeInsets.only(top: 6), child: Text(subtitle)),
-    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-    onTap: onTap,
+    title: Text(title),
+    subtitle: Text(subtitle),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: tap,
   ));
 }
 
-class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.body});
+class _Note extends StatelessWidget {
+  const _Note({required this.title, required this.body});
   final String title, body;
   @override
   Widget build(BuildContext context) => Card(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: Padding(
-    padding: const EdgeInsets.all(16),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 6),
-      Text(body),
-    ]),
+    padding: const EdgeInsets.all(14),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 6), Text(body)]),
   ));
 }
 
-class _Lesson {
-  const _Lesson(this.title, this.explanation, this.code, this.real);
-  final String title, explanation, code, real;
+class Lesson {
+  const Lesson(this.title, this.explain, this.code, this.real);
+  final String title, explain, code, real;
 }
 
-class _LessonPage extends StatelessWidget {
-  const _LessonPage({required this.title, required this.intro, required this.lessons});
+class Lessons extends StatelessWidget {
+  const Lessons({super.key, required this.title, required this.intro, required this.items});
   final String title, intro;
-  final List<_Lesson> lessons;
+  final List<Lesson> items;
   @override
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
     Text(title, style: Theme.of(context).textTheme.headlineSmall),
     const SizedBox(height: 8),
     Text(intro),
-    const SizedBox(height: 14),
-    ...lessons.map((lesson) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Card(child: ExpansionTile(
-      title: Text(lesson.title),
-      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    const SizedBox(height: 12),
+    ...items.map((x) => Card(margin: const EdgeInsets.only(bottom: 9), child: ExpansionTile(
+      title: Text(x.title),
+      childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
       expandedCrossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(lesson.explanation),
-        const SizedBox(height: 10),
+        Text(x.explain),
+        const SizedBox(height: 8),
         const Text('Worked example', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 6),
-        _CodePanel(code: lesson.code),
-        const SizedBox(height: 10),
-        const Text('Real-world example', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(lesson.real),
+        _Code(x.code),
+        const SizedBox(height: 8),
+        const Text('Real-world use', style: TextStyle(fontWeight: FontWeight.bold)),
+        Text(x.real),
       ],
-    )))),
+    ))),
   ]);
 }
 
-class _CodePanel extends StatelessWidget {
-  const _CodePanel({required this.code});
-  final String code;
+class _Code extends StatelessWidget {
+  const _Code(this.value);
+  final String value;
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
+    margin: const EdgeInsets.symmetric(vertical: 7),
     padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: Theme.of(context).colorScheme.inverseSurface, borderRadius: BorderRadius.circular(10)),
-    child: SelectableText(code, style: TextStyle(color: Theme.of(context).colorScheme.onInverseSurface, fontFamily: 'monospace', fontSize: 13, height: 1.4)),
+    decoration: BoxDecoration(color: Theme.of(context).colorScheme.inverseSurface, borderRadius: BorderRadius.circular(9)),
+    child: SelectableText(value, style: TextStyle(color: Theme.of(context).colorScheme.onInverseSurface, fontFamily: 'monospace', fontSize: 13)),
   );
 }
 
 class PythonPage extends StatelessWidget {
   const PythonPage({super.key});
   @override
-  Widget build(BuildContext context) => const _LessonPage(title: 'Python programming', intro: 'Python is a high-level language. A program processes data by following instructions. Expand each topic to see the idea, code and a practical use.', lessons: [
-    _Lesson('1. Variables and data types', 'A variable is a name referring to a value. Common types: int, float, str, bool and list.', "student = 'Anu'\nmarks = 92\naverage = marks / 5\nprint(student)\nprint(average)\n\n# Output: Anu, then 18.4", 'A school result program stores a student name and marks, then calculates an average.'),
-    _Lesson('2. Operators', 'Arithmetic operators include +, -, *, /, //, %, and **. Python follows operator precedence.', 'total = 425\nsubjects = 5\nprint(total / subjects)\n\n# Output: 85.0', 'A report card calculates a student’s average from the total marks.'),
-    _Lesson('3. if, elif and else', 'Conditional statements select a path based on whether a condition is true.', 'marks = 76\nif marks >= 90:\n    grade = "A1"\nelif marks >= 75:\n    grade = "A2"\nelse:\n    grade = "B"\nprint(grade)\n\n# Output: A2', 'A school portal assigns a grade based on the score.'),
-    _Lesson('4. for and while loops', 'A for loop iterates over a sequence. A while loop repeats while its condition remains true.', 'total = 0\nfor mark in [80, 90, 70]:\n    total += mark\nprint(total)\n\n# Output: 240', 'A program totals marks for every subject without repeating code.'),
-    _Lesson('5. Strings and lists', 'A string stores text. A list stores an ordered, mutable collection. Indexing begins at zero.', 'subjects = ["CS", "Maths", "Physics"]\nprint(subjects[0])\nsubjects.append("Chemistry")\nprint(len(subjects))\n\n# Output: CS, then 4', 'An application stores a student’s subjects and adds an elective.'),
-    _Lesson('6. Dictionaries', 'A dictionary stores key-value pairs. Keys retrieve their associated values.', 'student = {"name": "Anu", "marks": 92}\nprint(student["name"])\nprint(student["marks"])', 'A student record contains fields such as name, roll number and marks.'),
-    _Lesson('7. Functions', 'A function is reusable code defined with def. Parameters receive values and return sends a result back.', 'def percentage(total, maximum):\n    return total / maximum * 100\nprint(percentage(425, 500))\n\n# Output: 85.0', 'The same percentage function can calculate results for every student.'),
-    _Lesson('8. Files and exceptions', 'Files preserve data after a program ends. with closes files automatically; try/except handles expected errors.', 'with open("note.txt", "w") as f:\n    f.write("Revise SQL")\n\ntry:\n    with open("note.txt") as f:\n        print(f.read())\nexcept FileNotFoundError:\n    print("File missing")', 'A program saves revision notes and handles a missing file safely.'),
-    _Lesson('9. Stack using a list', 'A stack follows LIFO (Last In, First Out). append() pushes and pop() removes the top item.', 'stack = []\nstack.append("A")\nstack.append("B")\nprint(stack.pop())\nprint(stack)\n\n# B, then ["A"]', 'Undo history and browser back-history can use stack-like behaviour.'),
+  Widget build(BuildContext context) => const Lessons(title: 'Python programming', intro: 'Python is a high-level language. A program follows instructions to process data and solve a problem.', items: [
+    Lesson('1. Variables and data types', 'A variable names a value. Common types: int, float, str, bool and list.', "name = 'Anu'\nmarks = 92\nprint(name, marks)\n# Anu 92", 'A result system stores a student name and marks.'),
+    Lesson('2. Operators', 'Arithmetic operators include +, -, *, /, //, %, and **.', 'total = 425\nsubjects = 5\nprint(total / subjects)\n# 85.0', 'A report card calculates the average marks.'),
+    Lesson('3. if, elif, else', 'Conditional statements select a path depending on whether a condition is true.', 'marks = 76\nif marks >= 90:\n    grade = "A1"\nelif marks >= 75:\n    grade = "A2"\nelse:\n    grade = "B"\nprint(grade)\n# A2', 'A school portal assigns a grade based on a score.'),
+    Lesson('4. for and while loops', 'A for loop iterates over a sequence. A while loop repeats while its condition is true.', 'total = 0\nfor mark in [80, 90, 70]:\n    total += mark\nprint(total)\n# 240', 'A program totals marks across subjects.'),
+    Lesson('5. Strings and lists', 'Strings store text. Lists store ordered, mutable collections. Indexing starts at zero.', 'subjects = ["CS", "Maths", "Physics"]\nprint(subjects[0])\nsubjects.append("Chemistry")\nprint(len(subjects))\n# CS, 4', 'An app stores subjects and adds a new elective.'),
+    Lesson('6. Dictionaries', 'A dictionary stores key-value pairs. Use a key to retrieve its value.', 'student = {"name": "Anu", "marks": 92}\nprint(student["name"])\n# Anu', 'A student record has fields such as name, roll number and marks.'),
+    Lesson('7. Functions', 'A function is reusable code defined with def. Parameters receive values; return gives a result.', 'def percent(total, maximum):\n    return total / maximum * 100\nprint(percent(425, 500))\n# 85.0', 'A school system reuses one percentage function for all students.'),
+    Lesson('8. Files and exceptions', 'Files preserve data after a program ends. with closes files; try/except handles expected errors.', 'with open("note.txt", "w") as f:\n    f.write("Revise SQL")\ntry:\n    with open("note.txt") as f:\n        print(f.read())\nexcept FileNotFoundError:\n    print("Missing")', 'A revision app saves notes and handles missing files.'),
+    Lesson('9. Stack using a list', 'A stack follows LIFO: Last In, First Out. append pushes; pop removes the top item.', 'stack = []\nstack.append("A")\nstack.append("B")\nprint(stack.pop())\n# B', 'Undo history and browser back history use stack-like behaviour.'),
   ]);
 }
 
 class SqlPage extends StatelessWidget {
   const SqlPage({super.key});
   @override
-  Widget build(BuildContext context) => const _LessonPage(title: 'SQL / MySQL', intro: 'SQL (Structured Query Language) defines, stores, retrieves and modifies relational data. MySQL is a database system that understands SQL.', lessons: [
-    _Lesson('1. Database and table', 'A database contains tables. A table has columns (fields) and rows (records). CREATE defines objects.', 'CREATE DATABASE school;\nUSE school;\nCREATE TABLE Student (\n roll_no INT PRIMARY KEY,\n name VARCHAR(30),\n city VARCHAR(25)\n);', 'A school stores student details in a Student table rather than paper registers.'),
-    _Lesson('2. INSERT, UPDATE, DELETE', 'INSERT adds rows. UPDATE changes rows. DELETE removes rows. Use WHERE to target the intended record.', "INSERT INTO Student VALUES (101, 'Anu', 'Chennai');\nUPDATE Student SET city='Madurai' WHERE roll_no=101;\nDELETE FROM Student WHERE roll_no=101;", 'When a student changes city, the office updates the row identified by roll number.'),
-    _Lesson('3. SELECT, WHERE, ORDER BY', 'SELECT retrieves columns. WHERE filters rows. ORDER BY sorts; ASC is ascending and DESC descending.', 'SELECT name, marks\nFROM Result\nWHERE marks >= 75\nORDER BY marks DESC;', 'A teacher lists students scoring at least 75, highest marks first.'),
-    _Lesson('4. Aggregate functions', 'COUNT counts, SUM adds, AVG calculates mean, MIN and MAX return extremes.', 'SELECT COUNT(*) AS students,\n AVG(marks) AS class_average,\n MAX(marks) AS highest\nFROM Result;', 'A teacher calculates class strength, average and highest score.'),
-    _Lesson('5. GROUP BY and HAVING', 'GROUP BY forms groups. HAVING filters groups after aggregation; WHERE filters rows before grouping.', 'SELECT city, COUNT(*) AS total\nFROM Student\nGROUP BY city\nHAVING COUNT(*) > 2;', 'The school counts students city-wise and displays cities with more than two students.'),
-    _Lesson('6. Joins', 'A join combines related rows from tables. Matching is commonly done using primary and foreign keys.', 'SELECT Student.name, Result.marks\nFROM Student INNER JOIN Result\nON Student.roll_no = Result.roll_no;', 'Names are stored in Student and marks in Result; the join displays both together.'),
-    _Lesson('7. Constraints and keys', 'PRIMARY KEY uniquely identifies a row. FOREIGN KEY links tables. NOT NULL requires a value; UNIQUE prevents duplicates.', 'CREATE TABLE Result (\n roll_no INT PRIMARY KEY,\n marks INT NOT NULL,\n FOREIGN KEY (roll_no) REFERENCES Student(roll_no)\n);', 'A result must belong to an existing student, preventing orphan marks records.'),
+  Widget build(BuildContext context) => const Lessons(title: 'SQL / MySQL', intro: 'SQL retrieves and modifies relational data. MySQL is a database management system that understands SQL.', items: [
+    Lesson('1. Database and table', 'A database contains tables. Columns are fields; rows are records. CREATE defines objects.', 'CREATE DATABASE school;\nUSE school;\nCREATE TABLE Student (\n roll_no INT PRIMARY KEY,\n name VARCHAR(30),\n city VARCHAR(25)\n);', 'A school stores student details in a structured Student table.'),
+    Lesson('2. INSERT, UPDATE, DELETE', 'INSERT adds rows. UPDATE changes rows. DELETE removes rows. WHERE targets the intended record.', "INSERT INTO Student VALUES (101, 'Anu', 'Chennai');\nUPDATE Student SET city='Madurai' WHERE roll_no=101;\nDELETE FROM Student WHERE roll_no=101;", 'The office updates a student city using the roll number.'),
+    Lesson('3. SELECT, WHERE, ORDER BY', 'SELECT retrieves columns. WHERE filters rows. ORDER BY sorts; ASC and DESC choose direction.', 'SELECT name, marks\nFROM Result\nWHERE marks >= 75\nORDER BY marks DESC;', 'A teacher lists students scoring at least 75, highest first.'),
+    Lesson('4. Aggregate functions', 'COUNT counts; SUM adds; AVG calculates mean; MIN and MAX return extremes.', 'SELECT COUNT(*), AVG(marks), MAX(marks)\nFROM Result;', 'A teacher calculates class strength, average and highest mark.'),
+    Lesson('5. GROUP BY and HAVING', 'GROUP BY forms groups. HAVING filters groups after aggregation; WHERE filters rows before grouping.', 'SELECT city, COUNT(*)\nFROM Student\nGROUP BY city\nHAVING COUNT(*) > 2;', 'The school counts students city-wise and shows cities with more than two.'),
+    Lesson('6. Joins', 'A join combines related rows from tables using matching columns.', 'SELECT Student.name, Result.marks\nFROM Student INNER JOIN Result\nON Student.roll_no = Result.roll_no;', 'Names and marks stored in separate tables are shown together.'),
+    Lesson('7. Constraints and keys', 'PRIMARY KEY uniquely identifies a row. FOREIGN KEY links tables. NOT NULL requires a value; UNIQUE prevents duplicates.', 'CREATE TABLE Result (\n roll_no INT PRIMARY KEY,\n marks INT NOT NULL,\n FOREIGN KEY (roll_no) REFERENCES Student(roll_no)\n);', 'A result must belong to an existing student record.'),
   ]);
 }
 
@@ -254,19 +229,17 @@ class IntegrationPage extends StatelessWidget {
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
     Text('Python + SQL integration', style: Theme.of(context).textTheme.headlineSmall),
     const SizedBox(height: 8),
-    const Text('Python controls the program. MySQL stores the records. mysql.connector lets Python send SQL statements and read the results.'),
-    const SizedBox(height: 12),
-    const _Panel(title: 'Real-time example: school result entry', body: 'Imagine the school office entering a student’s marks. Python receives the roll number and marks, sends an INSERT query to MySQL, then asks MySQL for that student’s result. The database keeps the record even after Python closes.'),
+    const Text('Python controls the program. MySQL stores the records. mysql.connector lets Python send SQL and read results.'),
     const SizedBox(height: 10),
-    const _Step(number: '1', title: 'Connect', body: 'Python opens a connection to the MySQL server using mysql.connector and database credentials.'),
-    const _Step(number: '2', title: 'Create cursor', body: 'A cursor is the object used to send SQL statements and retrieve query results.'),
-    const _Step(number: '3', title: 'Execute', body: 'cursor.execute() sends INSERT, SELECT, UPDATE or DELETE. Use placeholders for values instead of joining raw user input into SQL.'),
-    const _Step(number: '4', title: 'Fetch or commit', body: 'Use fetchone() or fetchall() after SELECT. Use commit() after INSERT, UPDATE or DELETE to save changes.'),
-    const _Step(number: '5', title: 'Close', body: 'Close cursor and connection. Real applications should handle exceptions and keep passwords out of source code.'),
-    const SizedBox(height: 12),
-    const Text('Worked Python + MySQL example', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+    const _Note(title: 'Real-time example: school result entry', body: 'The school office enters roll number 101 and marks 92. Python receives the values, sends INSERT to MySQL, commits the change, then sends SELECT to read the saved result. The database keeps the record after Python closes.'),
+    const _Note(title: '1. Connect', body: 'mysql.connector.connect() opens the connection using host, user, password and database.'),
+    const _Note(title: '2. Cursor', body: 'con.cursor() creates the object used to execute SQL and retrieve results.'),
+    const _Note(title: '3. Execute', body: 'cursor.execute() sends a query. Use placeholders for user values instead of building SQL by string concatenation.'),
+    const _Note(title: '4. Fetch or commit', body: 'fetchone() returns one row; fetchall() returns remaining rows. commit() saves INSERT, UPDATE and DELETE changes.'),
+    const _Note(title: '5. Close', body: 'Close the cursor and connection. Real applications should handle exceptions and protect credentials.'),
     const SizedBox(height: 8),
-    const _CodePanel(code: """import mysql.connector
+    const Text('Worked Python + MySQL example', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+    const _Code("""import mysql.connector
 
 con = mysql.connector.connect(
     host="localhost",
@@ -276,13 +249,11 @@ con = mysql.connector.connect(
 )
 cur = con.cursor()
 
-# Save a student's result
 sql = "INSERT INTO Result VALUES (%s, %s)"
 values = (101, 92)
 cur.execute(sql, values)
 con.commit()
 
-# Read it back
 cur.execute(
     "SELECT * FROM Result WHERE roll_no = %s",
     (101,)
@@ -292,445 +263,60 @@ print(row)
 
 cur.close()
 con.close()"""),
-    const SizedBox(height: 8),
-    const _Panel(title: 'Expected idea of output', body: '(101, 92) — exact output depends on the table columns and existing data. INSERT stores the row; SELECT reads it back.'),
-    const SizedBox(height: 12),
-    const Text('Important CBSE terms', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-    const _Term(term: 'Connection', meaning: 'Communication link between Python and MySQL.'),
-    const _Term(term: 'Cursor', meaning: 'Object that executes SQL statements.'),
-    const _Term(term: 'execute()', meaning: 'Sends an SQL statement to the database.'),
-    const _Term(term: 'fetchone()', meaning: 'Returns the next single row.'),
-    const _Term(term: 'fetchall()', meaning: 'Returns all remaining rows.'),
-    const _Term(term: 'commit()', meaning: 'Saves the current transaction changes.'),
+    const _Note(title: 'Expected output idea', body: '(101, 92), assuming the Result table has those two columns and no conflicting row. INSERT saves it; SELECT reads it back.'),
+    const _Note(title: 'CBSE terms', body: 'Connection = communication link. Cursor = SQL executor. execute() = send query. fetchone() = read one row. fetchall() = read all rows. commit() = save transaction.'),
   ]);
 }
 
-class _Step extends StatelessWidget {
-  const _Step({required this.number, required this.title, required this.body});
-  final String number, title, body;
-  @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
-    leading: CircleAvatar(child: Text(number)),
-    title: Text(title),
-    subtitle: Text(body),
-  )));
-}
-
-class _Term extends StatelessWidget {
-  const _Term({required this.term, required this.meaning});
-  final String term, meaning;
-  @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    SizedBox(width: 112, child: Text(term, style: const TextStyle(fontWeight: FontWeight.bold))),
-    Expanded(child: Text(meaning)),
-  ]));
-}
-
-class _Question {
-  const _Question(this.question, this.options, this.answer, this.explanation);
-  final String question;
+class Question {
+  const Question(this.text, this.options, this.answer, this.why);
+  final String text, why;
   final List<String> options;
   final int answer;
-  final String explanation;
 }
 
-class PracticePage extends StatefulWidget {
-  const PracticePage({super.key});
+class QuizPage extends StatefulWidget {
+  const QuizPage({super.key});
   @override
-  State<PracticePage> createState() => _PracticePageState();
+  State<QuizPage> createState() => _QuizPageState();
 }
 
-class _PracticePageState extends State<PracticePage> {
-  static const questions = [
-    _Question('What is the output? x = [10, 20, 30]; print(x[1])', ['10', '20', '30', 'Error'], 1, 'List indexing starts at zero. x[1] is the second item: 20.'),
-    _Question('Which keyword defines a Python function?', ['function', 'define', 'def', 'fun'], 2, 'A Python function is defined with def.'),
-    _Question('Which SQL clause filters rows before grouping?', ['HAVING', 'WHERE', 'ORDER BY', 'GROUP BY'], 1, 'WHERE filters individual rows before GROUP BY.'),
-    _Question('Which SQL function counts rows?', ['SUM()', 'AVG()', 'COUNT()', 'TOTAL()'], 2, 'COUNT() returns the number of rows (or non-NULL values for a column).'),
-    _Question('Which method saves INSERT changes in Python-MySQL?', ['fetchall()', 'commit()', 'execute()', 'close()'], 1, 'commit() confirms the transaction so changes are saved.'),
-    _Question('Which cursor method retrieves one row?', ['fetchone()', 'fetchall()', 'one()', 'read()'], 0, 'fetchone() returns the next single row.'),
+class _QuizPageState extends State<QuizPage> {
+  static const qs = [
+    Question('What is the output of x=[10,20,30]; print(x[1])?', ['10', '20', '30', 'Error'], 1, 'Index 1 is the second element: 20.'),
+    Question('Which keyword defines a Python function?', ['function', 'define', 'def', 'fun'], 2, 'Python uses def.'),
+    Question('Which SQL clause filters rows before grouping?', ['HAVING', 'WHERE', 'ORDER BY', 'GROUP BY'], 1, 'WHERE filters rows before grouping.'),
+    Question('Which SQL function counts rows?', ['SUM()', 'AVG()', 'COUNT()', 'TOTAL()'], 2, 'COUNT() counts rows or non-NULL values.'),
+    Question('Which method saves MySQL changes?', ['fetchall()', 'commit()', 'execute()', 'close()'], 1, 'commit() saves the transaction.'),
+    Question('Which cursor method retrieves one row?', ['fetchone()', 'fetchall()', 'one()', 'read()'], 0, 'fetchone() returns the next single row.'),
   ];
   final answers = <int, int>{};
-  bool submitted = false;
-
+  bool checked = false;
   @override
   Widget build(BuildContext context) {
-    final score = questions.asMap().entries.where((entry) => answers[entry.key] == entry.value.answer).length;
+    final score = qs.asMap().entries.where((e) => answers[e.key] == e.value.answer).length;
     return ListView(padding: const EdgeInsets.all(16), children: [
       Text('Quick practice', style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 8),
-      const Text('Six starter questions from Python, SQL and integration. Select all answers, then check the explanations.'),
-      const SizedBox(height: 12),
-      ...questions.asMap().entries.map((entry) {
-        final i = entry.key;
-        final q = entry.value;
-        return Padding(padding: const EdgeInsets.only(bottom: 10), child: Card(child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Q${i + 1}. ${q.question}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            ...q.options.asMap().entries.map((option) => RadioListTile<int>(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: option.key,
-              groupValue: answers[i],
-              onChanged: submitted ? null : (value) => setState(() => answers[i] = value!),
-              title: Text(option.value),
-            )),
-            if (submitted)
-              Text('${answers[i] == q.answer ? 'Correct. ' : 'Correct answer: ${q.options[q.answer]}. '}${q.explanation}',
-                style: TextStyle(color: answers[i] == q.answer ? Colors.green : Theme.of(context).colorScheme.error)),
-          ]),
-        )));
-      }),
-      FilledButton(onPressed: answers.length == questions.length ? () => setState(() => submitted = true) : null, child: const Text('Check answers')),
-      if (submitted) ...[
-        const SizedBox(height: 10),
-        Text('Your score: $score / ${questions.length}', style: Theme.of(context).textTheme.titleLarge),
-        OutlinedButton(onPressed: () => setState(() { answers.clear(); submitted = false; }), child: const Text('Try again')),
-      ],
-    ]);
-  }
-}
-), '')}/api/v1/auth/google'),
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({'id_token': token}),
-      ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        var detail = 'API sign-in failed (' + response.statusCode.toString() + ').';
-        try {
-          final data = jsonDecode(response.body);
-          if (data is Map && data['detail'] != null) detail = data['detail'].toString();
-        } catch (_) {}
-        throw Exception(detail);
-      }
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      if (mounted) setState(() => student = Map<String, dynamic>.from(data['user'] as Map));
-    } catch (error) {
-      var message = error.toString().replaceFirst('Exception: ', '');
-      final lower = message.toLowerCase();
-      if (lower.contains('developer_error') || lower.contains('sign_in_failed') || lower.contains('12500') || lower.contains('10:')) {
-        message = 'OAuth mismatch: verify Android package com.lkrkavin.cs_master_12, SHA-1 of the installed APK signing key, and the Web OAuth client ID.';
-      } else if (lower.contains('socketexception') || lower.contains('connection refused') || lower.contains('failed host lookup')) {
-        message = 'Cannot reach the Python API. Check API_BASE_URL, HTTPS deployment and internet connection.';
-      } else if (lower.contains('timeout')) {
-        message = 'Python API timed out. Check whether your backend is running.';
-      }
-      if (mounted) showAuth(message);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
-  void showAuth(String message) {
-    showDialog<void>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Google sign-in'),
-      content: Text(message),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-    ));
-  }
-
-  Future<void> signOut() async {
-    await google.signOut();
-    if (mounted) setState(() => student = null);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = [
-      HomePage(student: student, open: (value) => setState(() => tab = value)),
-      const PythonPage(),
-      const SqlPage(),
-      const IntegrationPage(),
-      const PracticePage(),
-    ];
-    return Scaffold(
-      appBar: AppBar(title: const Text('CS MASTER 12'), actions: [
-        if (student != null)
-          IconButton(onPressed: signOut, icon: const Icon(Icons.logout), tooltip: 'Sign out')
-        else
-          IconButton(onPressed: busy ? null : signIn, icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.account_circle_outlined), tooltip: 'Google sign in'),
-      ]),
-      body: SafeArea(child: IndexedStack(index: tab, children: pages)),
-      bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (value) => setState(() => tab = value), destinations: const [
-        NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
-        NavigationDestination(icon: Icon(Icons.code), label: 'Python'),
-        NavigationDestination(icon: Icon(Icons.storage), label: 'SQL'),
-        NavigationDestination(icon: Icon(Icons.hub_outlined), label: 'Integration'),
-        NavigationDestination(icon: Icon(Icons.quiz_outlined), label: 'Practice'),
-      ]),
-    );
-  }
-}
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.student, required this.open});
-  final Map<String, dynamic>? student;
-  final ValueChanged<int> open;
-  @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(18), children: [
-    Text('Your Class 12 CS workspace', style: Theme.of(context).textTheme.headlineSmall),
-    const SizedBox(height: 8),
-    const Text('Learn a concept, study a worked example, then test your understanding.'),
-    const SizedBox(height: 16),
-    Card(child: ListTile(leading: const Icon(Icons.school), title: Text(student == null ? 'Guest learning mode' : 'Signed in: ' + (student!['name'] ?? 'Student').toString()), subtitle: Text(student == null ? 'All current lessons are available without Google sign-in.' : (student!['email'] ?? '').toString()))),
-    const SizedBox(height: 12),
-    _AreaCard(title: 'Python', subtitle: 'Variables, conditions, loops, lists, functions, files and stacks.', icon: Icons.code, onTap: () => open(1)),
-    const SizedBox(height: 10),
-    _AreaCard(title: 'SQL / MySQL', subtitle: 'Tables, INSERT, SELECT, filters, grouping, aggregates and joins.', icon: Icons.storage, onTap: () => open(2)),
-    const SizedBox(height: 10),
-    _AreaCard(title: 'Python + SQL', subtitle: 'Connect Python to MySQL, execute queries and fetch results.', icon: Icons.integration_instructions, onTap: () => open(3)),
-    const SizedBox(height: 10),
-    _AreaCard(title: 'Practice & quiz', subtitle: 'CBSE-style questions with instant answers and explanations.', icon: Icons.quiz_outlined, onTap: () => open(4)),
-    const SizedBox(height: 16),
-    const _Panel(title: 'Study method', body: 'Read → understand the example → predict the output → check the explanation → solve the quiz.'),
-    const SizedBox(height: 10),
-    const _Panel(title: 'What works now', body: 'Lessons and quiz run locally. Google account sync needs OAuth client IDs and a deployed backend. No cloud progress sync is claimed yet.'),
-  ]);
-}
-
-class _AreaCard extends StatelessWidget {
-  const _AreaCard({required this.title, required this.subtitle, required this.icon, required this.onTap});
-  final String title, subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => Card(child: ListTile(
-    contentPadding: const EdgeInsets.all(16),
-    leading: CircleAvatar(child: Icon(icon)),
-    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-    subtitle: Padding(padding: const EdgeInsets.only(top: 6), child: Text(subtitle)),
-    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-    onTap: onTap,
-  ));
-}
-
-class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.body});
-  final String title, body;
-  @override
-  Widget build(BuildContext context) => Card(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: Padding(
-    padding: const EdgeInsets.all(16),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 6),
-      Text(body),
-    ]),
-  ));
-}
-
-class _Lesson {
-  const _Lesson(this.title, this.explanation, this.code, this.real);
-  final String title, explanation, code, real;
-}
-
-class _LessonPage extends StatelessWidget {
-  const _LessonPage({required this.title, required this.intro, required this.lessons});
-  final String title, intro;
-  final List<_Lesson> lessons;
-  @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
-    Text(title, style: Theme.of(context).textTheme.headlineSmall),
-    const SizedBox(height: 8),
-    Text(intro),
-    const SizedBox(height: 14),
-    ...lessons.map((lesson) => Padding(padding: const EdgeInsets.only(bottom: 9), child: Card(child: ExpansionTile(
-      title: Text(lesson.title),
-      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      expandedCrossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(lesson.explanation),
-        const SizedBox(height: 10),
-        const Text('Worked example', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 6),
-        _CodePanel(code: lesson.code),
-        const SizedBox(height: 10),
-        const Text('Real-world example', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(lesson.real),
-      ],
-    )))),
-  ]);
-}
-
-class _CodePanel extends StatelessWidget {
-  const _CodePanel({required this.code});
-  final String code;
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: Theme.of(context).colorScheme.inverseSurface, borderRadius: BorderRadius.circular(10)),
-    child: SelectableText(code, style: TextStyle(color: Theme.of(context).colorScheme.onInverseSurface, fontFamily: 'monospace', fontSize: 13, height: 1.4)),
-  );
-}
-
-class PythonPage extends StatelessWidget {
-  const PythonPage({super.key});
-  @override
-  Widget build(BuildContext context) => const _LessonPage(title: 'Python programming', intro: 'Python is a high-level language. A program processes data by following instructions. Expand each topic to see the idea, code and a practical use.', lessons: [
-    _Lesson('1. Variables and data types', 'A variable is a name referring to a value. Common types: int, float, str, bool and list.', "student = 'Anu'\nmarks = 92\naverage = marks / 5\nprint(student)\nprint(average)\n\n# Output: Anu, then 18.4", 'A school result program stores a student name and marks, then calculates an average.'),
-    _Lesson('2. Operators', 'Arithmetic operators include +, -, *, /, //, %, and **. Python follows operator precedence.', 'total = 425\nsubjects = 5\nprint(total / subjects)\n\n# Output: 85.0', 'A report card calculates a student’s average from the total marks.'),
-    _Lesson('3. if, elif and else', 'Conditional statements select a path based on whether a condition is true.', 'marks = 76\nif marks >= 90:\n    grade = "A1"\nelif marks >= 75:\n    grade = "A2"\nelse:\n    grade = "B"\nprint(grade)\n\n# Output: A2', 'A school portal assigns a grade based on the score.'),
-    _Lesson('4. for and while loops', 'A for loop iterates over a sequence. A while loop repeats while its condition remains true.', 'total = 0\nfor mark in [80, 90, 70]:\n    total += mark\nprint(total)\n\n# Output: 240', 'A program totals marks for every subject without repeating code.'),
-    _Lesson('5. Strings and lists', 'A string stores text. A list stores an ordered, mutable collection. Indexing begins at zero.', 'subjects = ["CS", "Maths", "Physics"]\nprint(subjects[0])\nsubjects.append("Chemistry")\nprint(len(subjects))\n\n# Output: CS, then 4', 'An application stores a student’s subjects and adds an elective.'),
-    _Lesson('6. Dictionaries', 'A dictionary stores key-value pairs. Keys retrieve their associated values.', 'student = {"name": "Anu", "marks": 92}\nprint(student["name"])\nprint(student["marks"])', 'A student record contains fields such as name, roll number and marks.'),
-    _Lesson('7. Functions', 'A function is reusable code defined with def. Parameters receive values and return sends a result back.', 'def percentage(total, maximum):\n    return total / maximum * 100\nprint(percentage(425, 500))\n\n# Output: 85.0', 'The same percentage function can calculate results for every student.'),
-    _Lesson('8. Files and exceptions', 'Files preserve data after a program ends. with closes files automatically; try/except handles expected errors.', 'with open("note.txt", "w") as f:\n    f.write("Revise SQL")\n\ntry:\n    with open("note.txt") as f:\n        print(f.read())\nexcept FileNotFoundError:\n    print("File missing")', 'A program saves revision notes and handles a missing file safely.'),
-    _Lesson('9. Stack using a list', 'A stack follows LIFO (Last In, First Out). append() pushes and pop() removes the top item.', 'stack = []\nstack.append("A")\nstack.append("B")\nprint(stack.pop())\nprint(stack)\n\n# B, then ["A"]', 'Undo history and browser back-history can use stack-like behaviour.'),
-  ]);
-}
-
-class SqlPage extends StatelessWidget {
-  const SqlPage({super.key});
-  @override
-  Widget build(BuildContext context) => const _LessonPage(title: 'SQL / MySQL', intro: 'SQL (Structured Query Language) defines, stores, retrieves and modifies relational data. MySQL is a database system that understands SQL.', lessons: [
-    _Lesson('1. Database and table', 'A database contains tables. A table has columns (fields) and rows (records). CREATE defines objects.', 'CREATE DATABASE school;\nUSE school;\nCREATE TABLE Student (\n roll_no INT PRIMARY KEY,\n name VARCHAR(30),\n city VARCHAR(25)\n);', 'A school stores student details in a Student table rather than paper registers.'),
-    _Lesson('2. INSERT, UPDATE, DELETE', 'INSERT adds rows. UPDATE changes rows. DELETE removes rows. Use WHERE to target the intended record.', "INSERT INTO Student VALUES (101, 'Anu', 'Chennai');\nUPDATE Student SET city='Madurai' WHERE roll_no=101;\nDELETE FROM Student WHERE roll_no=101;", 'When a student changes city, the office updates the row identified by roll number.'),
-    _Lesson('3. SELECT, WHERE, ORDER BY', 'SELECT retrieves columns. WHERE filters rows. ORDER BY sorts; ASC is ascending and DESC descending.', 'SELECT name, marks\nFROM Result\nWHERE marks >= 75\nORDER BY marks DESC;', 'A teacher lists students scoring at least 75, highest marks first.'),
-    _Lesson('4. Aggregate functions', 'COUNT counts, SUM adds, AVG calculates mean, MIN and MAX return extremes.', 'SELECT COUNT(*) AS students,\n AVG(marks) AS class_average,\n MAX(marks) AS highest\nFROM Result;', 'A teacher calculates class strength, average and highest score.'),
-    _Lesson('5. GROUP BY and HAVING', 'GROUP BY forms groups. HAVING filters groups after aggregation; WHERE filters rows before grouping.', 'SELECT city, COUNT(*) AS total\nFROM Student\nGROUP BY city\nHAVING COUNT(*) > 2;', 'The school counts students city-wise and displays cities with more than two students.'),
-    _Lesson('6. Joins', 'A join combines related rows from tables. Matching is commonly done using primary and foreign keys.', 'SELECT Student.name, Result.marks\nFROM Student INNER JOIN Result\nON Student.roll_no = Result.roll_no;', 'Names are stored in Student and marks in Result; the join displays both together.'),
-    _Lesson('7. Constraints and keys', 'PRIMARY KEY uniquely identifies a row. FOREIGN KEY links tables. NOT NULL requires a value; UNIQUE prevents duplicates.', 'CREATE TABLE Result (\n roll_no INT PRIMARY KEY,\n marks INT NOT NULL,\n FOREIGN KEY (roll_no) REFERENCES Student(roll_no)\n);', 'A result must belong to an existing student, preventing orphan marks records.'),
-  ]);
-}
-
-class IntegrationPage extends StatelessWidget {
-  const IntegrationPage({super.key});
-  @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
-    Text('Python + SQL integration', style: Theme.of(context).textTheme.headlineSmall),
-    const SizedBox(height: 8),
-    const Text('Python controls the program. MySQL stores the records. mysql.connector lets Python send SQL statements and read the results.'),
-    const SizedBox(height: 12),
-    const _Panel(title: 'Real-time example: school result entry', body: 'Imagine the school office entering a student’s marks. Python receives the roll number and marks, sends an INSERT query to MySQL, then asks MySQL for that student’s result. The database keeps the record even after Python closes.'),
-    const SizedBox(height: 10),
-    const _Step(number: '1', title: 'Connect', body: 'Python opens a connection to the MySQL server using mysql.connector and database credentials.'),
-    const _Step(number: '2', title: 'Create cursor', body: 'A cursor is the object used to send SQL statements and retrieve query results.'),
-    const _Step(number: '3', title: 'Execute', body: 'cursor.execute() sends INSERT, SELECT, UPDATE or DELETE. Use placeholders for values instead of joining raw user input into SQL.'),
-    const _Step(number: '4', title: 'Fetch or commit', body: 'Use fetchone() or fetchall() after SELECT. Use commit() after INSERT, UPDATE or DELETE to save changes.'),
-    const _Step(number: '5', title: 'Close', body: 'Close cursor and connection. Real applications should handle exceptions and keep passwords out of source code.'),
-    const SizedBox(height: 12),
-    const Text('Worked Python + MySQL example', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-    const SizedBox(height: 8),
-    const _CodePanel(code: """import mysql.connector
-
-con = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="YOUR_PASSWORD",
-    database="school"
-)
-cur = con.cursor()
-
-# Save a student's result
-sql = "INSERT INTO Result VALUES (%s, %s)"
-values = (101, 92)
-cur.execute(sql, values)
-con.commit()
-
-# Read it back
-cur.execute(
-    "SELECT * FROM Result WHERE roll_no = %s",
-    (101,)
-)
-row = cur.fetchone()
-print(row)
-
-cur.close()
-con.close()"""),
-    const SizedBox(height: 8),
-    const _Panel(title: 'Expected idea of output', body: '(101, 92) — exact output depends on the table columns and existing data. INSERT stores the row; SELECT reads it back.'),
-    const SizedBox(height: 12),
-    const Text('Important CBSE terms', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-    const _Term(term: 'Connection', meaning: 'Communication link between Python and MySQL.'),
-    const _Term(term: 'Cursor', meaning: 'Object that executes SQL statements.'),
-    const _Term(term: 'execute()', meaning: 'Sends an SQL statement to the database.'),
-    const _Term(term: 'fetchone()', meaning: 'Returns the next single row.'),
-    const _Term(term: 'fetchall()', meaning: 'Returns all remaining rows.'),
-    const _Term(term: 'commit()', meaning: 'Saves the current transaction changes.'),
-  ]);
-}
-
-class _Step extends StatelessWidget {
-  const _Step({required this.number, required this.title, required this.body});
-  final String number, title, body;
-  @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
-    leading: CircleAvatar(child: Text(number)),
-    title: Text(title),
-    subtitle: Text(body),
-  )));
-}
-
-class _Term extends StatelessWidget {
-  const _Term({required this.term, required this.meaning});
-  final String term, meaning;
-  @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    SizedBox(width: 112, child: Text(term, style: const TextStyle(fontWeight: FontWeight.bold))),
-    Expanded(child: Text(meaning)),
-  ]));
-}
-
-class _Question {
-  const _Question(this.question, this.options, this.answer, this.explanation);
-  final String question;
-  final List<String> options;
-  final int answer;
-  final String explanation;
-}
-
-class PracticePage extends StatefulWidget {
-  const PracticePage({super.key});
-  @override
-  State<PracticePage> createState() => _PracticePageState();
-}
-
-class _PracticePageState extends State<PracticePage> {
-  static const questions = [
-    _Question('What is the output? x = [10, 20, 30]; print(x[1])', ['10', '20', '30', 'Error'], 1, 'List indexing starts at zero. x[1] is the second item: 20.'),
-    _Question('Which keyword defines a Python function?', ['function', 'define', 'def', 'fun'], 2, 'A Python function is defined with def.'),
-    _Question('Which SQL clause filters rows before grouping?', ['HAVING', 'WHERE', 'ORDER BY', 'GROUP BY'], 1, 'WHERE filters individual rows before GROUP BY.'),
-    _Question('Which SQL function counts rows?', ['SUM()', 'AVG()', 'COUNT()', 'TOTAL()'], 2, 'COUNT() returns the number of rows (or non-NULL values for a column).'),
-    _Question('Which method saves INSERT changes in Python-MySQL?', ['fetchall()', 'commit()', 'execute()', 'close()'], 1, 'commit() confirms the transaction so changes are saved.'),
-    _Question('Which cursor method retrieves one row?', ['fetchone()', 'fetchall()', 'one()', 'read()'], 0, 'fetchone() returns the next single row.'),
-  ];
-  final answers = <int, int>{};
-  bool submitted = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final score = questions.asMap().entries.where((entry) => answers[entry.key] == entry.value.answer).length;
-    return ListView(padding: const EdgeInsets.all(16), children: [
-      Text('Quick practice', style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 8),
-      const Text('Six starter questions from Python, SQL and integration. Select all answers, then check the explanations.'),
-      const SizedBox(height: 12),
-      ...questions.asMap().entries.map((entry) {
-        final i = entry.key;
-        final q = entry.value;
-        return Padding(padding: const EdgeInsets.only(bottom: 10), child: Card(child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Q' + (i + 1).toString() + '. ' + q.question, style: const TextStyle(fontWeight: FontWeight.bold)),
-            ...q.options.asMap().entries.map((option) => RadioListTile<int>(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: option.key,
-              groupValue: answers[i],
-              onChanged: submitted ? null : (value) => setState(() => answers[i] = value!),
-              title: Text(option.value),
-            )),
-            if (submitted)
-              Text((answers[i] == q.answer ? 'Correct. ' : 'Correct answer: ' + q.options[q.answer] + '. ') + q.explanation,
-                style: TextStyle(color: answers[i] == q.answer ? Colors.green : Theme.of(context).colorScheme.error)),
-          ]),
-        )));
-      }),
-      FilledButton(onPressed: answers.length == questions.length ? () => setState(() => submitted = true) : null, child: const Text('Check answers')),
-      if (submitted) ...[
-        const SizedBox(height: 10),
-        Text('Your score: ' + score.toString() + ' / ' + questions.length.toString(), style: Theme.of(context).textTheme.titleLarge),
-        OutlinedButton(onPressed: () => setState(() { answers.clear(); submitted = false; }), child: const Text('Try again')),
+      const Text('Answer all six starter questions, then check your score and explanations.'),
+      ...qs.asMap().entries.map((e) => Card(margin: const EdgeInsets.only(top: 10), child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Q' + (e.key + 1).toString() + '. ' + e.value.text, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ...e.value.options.asMap().entries.map((o) => RadioListTile<int>(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            value: o.key,
+            groupValue: answers[e.key],
+            onChanged: checked ? null : (v) => setState(() => answers[e.key] = v!),
+            title: Text(o.value),
+          )),
+          if (checked) Text((answers[e.key] == e.value.answer ? 'Correct. ' : 'Correct: ' + e.value.options[e.value.answer] + '. ') + e.value.why),
+        ]),
+      ))),
+      FilledButton(onPressed: answers.length == qs.length ? () => setState(() => checked = true) : null, child: const Text('Check answers')),
+      if (checked) ...[
+        Text('Score: ' + score.toString() + ' / ' + qs.length.toString(), style: Theme.of(context).textTheme.titleLarge),
+        OutlinedButton(onPressed: () => setState(() { answers.clear(); checked = false; }), child: const Text('Try again')),
       ],
     ]);
   }
