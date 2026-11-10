@@ -88,7 +88,7 @@ jobs:
       - name: Build universal release APK
         working-directory: app
         run: >-
-          flutter build apk --release
+          flutter build apk --release --split-per-abi
           --dart-define=GOOGLE_WEB_CLIENT_ID=${{ vars.GOOGLE_WEB_CLIENT_ID }}
           --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
 
@@ -96,21 +96,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk="app/build/app/outputs/flutter-apk/app-release.apk"
+          apk="app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           test -f "$apk"
           bytes=$(stat -c%s "$apk")
           mib=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b/1048576 }')
-          echo "Universal APK size: $mib MiB ($bytes bytes)"
+          echo "ARM64 APK size: $mib MiB ($bytes bytes)"
+          if [ "$bytes" -ge 62914560 ]; then echo "ARM64 APK exceeds the 60 MiB target" >&2; exit 1; fi
           {
-            echo "### Universal APK size"
+            echo "### Samsung-compatible ARM64 APK size"
             echo "**$mib MiB** ($bytes bytes)"
-            echo "Measured universal release APK size."
+            echo "Measured ARM64 release APK size; build fails if it reaches 60 MiB."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: cs-master-12-android-universal
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          name: cs-master-12-android-arm64
+          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 14
