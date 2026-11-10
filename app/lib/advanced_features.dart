@@ -23,7 +23,7 @@ class AdvancedHub extends StatelessWidget {
  ]));
 }
 Widget _tile(BuildContext c,String t,String s,IconData i,Widget p)=>Card(child:ListTile(leading:CircleAvatar(child:Icon(i)),title:Text(t),subtitle:Text(s),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>p))));
-class Info extends StatelessWidget {const Info(this.title,this.body);final String title,body;@override Widget build(BuildContext c)=>Card(color:Theme.of(c).colorScheme.surfaceContainerHighest,child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:Theme.of(c).textTheme.titleMedium),const SizedBox(height:5),Text(body)])));}
+class Info extends StatelessWidget {const Info(this.title,this.body,{super.key});final String title,body;@override Widget build(BuildContext c)=>Card(color:Theme.of(c).colorScheme.surfaceContainerHighest,child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:Theme.of(c).textTheme.titleMedium),const SizedBox(height:5),Text(body)])));}
 class Store {
  static Future<Set<String>> done()async=>(await SharedPreferences.getInstance()).getStringList('cs_done')?.toSet()??<String>{};
  static Future<int> xp()async=>(await SharedPreferences.getInstance()).getInt('cs_xp')??0;
@@ -34,7 +34,7 @@ class _ProgressPageState extends State<ProgressPage>{
  static const topics=< (String,String)>[('py1','Python basics'),('py2','Conditions and loops'),('py3','Strings and collections'),('py4','Functions and files'),('py5','Stack operations'),('sql1','Database and tables'),('sql2','INSERT, UPDATE, DELETE'),('sql3','SELECT and filtering'),('sql4','Aggregates and grouping'),('sql5','Joins and keys'),('int1','Python–SQL integration')];
  Set<String> completed={};int points=0;
  @override void initState(){super.initState();load();}
- Future<void> load()async{final d=await Store.done();final p=await Store.xp();if(mounted)setState(()=>{completed=d,points=p});}
+ Future<void> load()async{final d=await Store.done();final p=await Store.xp();if (mounted) { setState(() { completed = d; points = p; }); }}
  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Progress dashboard')),body:ListView(padding:const EdgeInsets.all(16),children:[
   Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('$points XP',style:Theme.of(c).textTheme.headlineMedium),Text(completed.length.toString()+' of '+topics.length.toString()+' learning goals completed'),LinearProgressIndicator(value:completed.length/topics.length)]))),
   ...topics.map((t)=>CheckboxListTile(value:completed.contains(t.$1),title:Text(t.$2),onChanged:(v)async{if(v==true)await Store.finish(t.$1);await load();})),
@@ -76,7 +76,7 @@ class _CodingPageState extends State<CodingPage>{
   ('SQL COUNT','What does SELECT COUNT(*) return?',['Average','Number of rows','Largest value','Column names'],1,'COUNT(*) counts rows.')
  ];
  @override Widget build(BuildContext c){final t=tasks[i];return Scaffold(appBar:AppBar(title:const Text('Coding practice lab')),body:ListView(padding:const EdgeInsets.all(16),children:[
-  DropdownButtonFormField<int>(value:i,items:List.generate(tasks.length,(n)=>DropdownMenuItem(value:n,child:Text(tasks[n].$1))),onChanged:(v)=>setState(()=>{i=v??0;selected=null;checked=false})),
+  DropdownButtonFormField<int>(value:i,items:List.generate(tasks.length,(n)=>DropdownMenuItem(value:n,child:Text(tasks[n].$1))),onChanged: (v) { setState(() { i = v ?? 0; selected = null; checked = false; }); }),
   Text(t.$1,style:Theme.of(c).textTheme.titleLarge),SelectableText(t.$2.replaceAll(r'\n','\n'),style:const TextStyle(fontFamily:'monospace')),
   ...t.$3.asMap().entries.map((o)=>RadioListTile<int>(value:o.key,groupValue:selected,title:Text(o.value),onChanged:checked?null:(v)=>setState(()=>selected=v))),
   FilledButton(onPressed:selected==null?null:()=>setState(()=>checked=true),child:const Text('Check prediction')),
@@ -98,7 +98,7 @@ class _ExamPageState extends State<ExamPage>{
    if(submitted)Text((a[e.key]==e.value.$3?'Correct. ':'Answer: '+e.value.$2[e.value.$3]+'. ')+e.value.$4)
   ])))),
   FilledButton(onPressed:a.length==qs.length&&!submitted?()=>setState(()=>submitted=true):null,child:const Text('Submit')),
-  if(submitted)...[Text('Score: '+score.toString()+' / 10',style:Theme.of(c).textTheme.headlineSmall),TextButton(onPressed:()=>setState(()=>{a.clear();submitted=false}),child:const Text('Retake'))]
+  if(submitted)...[Text('Score: '+score.toString()+' / 10',style:Theme.of(c).textTheme.headlineSmall),TextButton(onPressed: () { setState(() { a.clear(); submitted = false; }); },child:const Text('Retake'))]
  ]));}
 }
 class MissionPage extends StatefulWidget{const MissionPage({super.key});@override State<MissionPage> createState()=>_MissionPageState();}
@@ -106,7 +106,7 @@ class _MissionPageState extends State<MissionPage>{
  static const missions=< (String,String,String)>[('m1','Output detective','Predict a Python list-indexing program.'),('m2','SQL investigator','Write SELECT with WHERE and ORDER BY.'),('m3','Database bridge','Explain cursor(), execute() and commit().')];
  Set<String> done={};int points=0;
  @override void initState(){super.initState();load();}
- Future<void> load()async{final d=await Store.done();final p=await Store.xp();if(mounted)setState(()=>{done=d,points=p});}
+ Future<void> load()async{final d=await Store.done();final p=await Store.xp();if (mounted) { setState(() { done = d; points = p; }); }}
  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Daily coding missions')),body:ListView(padding:const EdgeInsets.all(16),children:[
   Text('$points XP total'),...missions.map((m)=>Card(child:ListTile(title:Text(m.$2),subtitle:Text(m.$3),trailing:done.contains(m.$1)?const Text('Done'):TextButton(onPressed:()async{await Store.finish(m.$1,reward:20);await load();},child:const Text('Complete')))))
  ]));
