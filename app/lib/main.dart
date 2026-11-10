@@ -148,7 +148,7 @@ class _SubjectCard extends StatelessWidget {
       title: Text(title),
       subtitle: Padding(padding: const EdgeInsets.only(top: 6), child: Text(subtitle)),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-      onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(title + ' lessons are being built.'))),
+      onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$title lessons are being built.'))),
     ),
   );
 }
