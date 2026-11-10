@@ -34,7 +34,7 @@ class _ProgressPageState extends State<ProgressPage>{
  static const topics=< (String,String)>[('py1','Python basics'),('py2','Conditions and loops'),('py3','Strings and collections'),('py4','Functions and files'),('py5','Stack operations'),('sql1','Database and tables'),('sql2','INSERT, UPDATE, DELETE'),('sql3','SELECT and filtering'),('sql4','Aggregates and grouping'),('sql5','Joins and keys'),('int1','Python–SQL integration')];
  Set<String> completed={};int points=0;
  @override void initState(){super.initState();load();}
- Future<void> load()async{final d=await Store.done();final p=await Store.xp();if (mounted) { setState(() { completed = d; points = p; }); }}
+ Future<void> load()async{final d=await Store.done();final p=await Store.xp();final topicIds=topics.map((t)=>t.$1).toSet();if (mounted) { setState(() { completed = d.intersection(topicIds); points = p; }); }}
  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Progress dashboard')),body:ListView(padding:const EdgeInsets.all(16),children:[
   Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('$points XP',style:Theme.of(c).textTheme.headlineMedium),Text(completed.length.toString()+' of '+topics.length.toString()+' learning goals completed'),LinearProgressIndicator(value:completed.length/topics.length)]))),
   ...topics.map((t)=>CheckboxListTile(value:completed.contains(t.$1),title:Text(t.$2),onChanged:(v)async{if(v==true)await Store.finish(t.$1);await load();})),
