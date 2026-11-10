@@ -3,7 +3,7 @@ name: Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feat/learning-studio-final-verified]
     paths:
       - "app/**"
       - ".github/workflows/android-apk.yml"
@@ -85,7 +85,7 @@ jobs:
         working-directory: app
         run: flutter pub get
 
-      - name: Build universal release APK
+      - name: Build Samsung ARM64 release APK
         working-directory: app
         run: >-
           flutter build apk --release --split-per-abi
