@@ -37,51 +37,13 @@ jobs:
         working-directory: app
         run: flutter create --platforms=android --org com.lkrkavin --project-name cs_master_12 .
 
-      # The generated release template enables R8. The ML Kit Flutter plugin
-      # references optional Chinese/Japanese/Korean/Devanagari recognizer
-      # classes that are not included by the Latin-only recognizer dependency.
-      # Disable code minification for this release build rather than suppressing
-      # missing-class diagnostics or shipping an APK with unresolved references.
-      - name: Disable R8 minification for ML Kit compatibility
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          candidates = [
-              Path("app/android/app/build.gradle.kts"),
-              Path("app/android/app/build.gradle"),
-          ]
-          gradle_file = next((p for p in candidates if p.is_file()), None)
-          if gradle_file is None:
-              raise SystemExit("Generated Android app Gradle file was not found")
-
-          source = gradle_file.read_text()
-          updated, count = re.subn(
-              r"(isMinifyEnabled|minifyEnabled)\s*=\s*true",
-              r"\1 = false",
-              source,
-          )
-          if count == 0:
-              updated, count = re.subn(
-                  r"minifyEnabled\s+true",
-                  "minifyEnabled false",
-                  source,
-              )
-          if count == 0:
-              raise SystemExit(
-                  f"Could not find an enabled release minification setting in {gradle_file}"
-              )
-
-          gradle_file.write_text(updated)
-          print(f"Disabled R8 minification in {gradle_file} ({count} setting(s))")
-          PY
-
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
 
+      # --no-shrink disables R8 for this build. Avoid modifying generated
+      # Gradle files: current Flutter templates may not declare minification
+      # as an explicit true setting, so such a patch is brittle and unnecessary.
       - name: Build release APK
         working-directory: app
         run: >-
