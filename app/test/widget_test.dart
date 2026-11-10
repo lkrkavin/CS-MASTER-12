@@ -36,3 +36,15 @@ void main() {
     expect(find.textContaining('Which keyword defines a Python function?'), findsOneWidget);
   });
 }
+
+
+  testWidgets('Learning Studio opens the integrated feature hub', (tester) async {
+    await tester.pumpWidget(const CsMasterApp());
+    await tester.tap(find.text('Learning Studio'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your complete CS workspace'), findsOneWidget);
+    expect(find.text('AI CS tutor'), findsOneWidget);
+    expect(find.text('Question scanner'), findsOneWidget);
+    expect(find.text('Coding practice lab'), findsOneWidget);
+    expect(find.text('CBSE mock practice'), findsOneWidget);
+  });
