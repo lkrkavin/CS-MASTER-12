@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'advanced_features.dart';
 
 const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
 const apiUrl = String.fromEnvironment('API_BASE_URL');
@@ -110,6 +111,8 @@ class HomePage extends StatelessWidget {
     const Text('Learn the concept, study a worked example and practise it.'),
     const SizedBox(height: 12),
     Card(child: ListTile(leading: const Icon(Icons.school), title: Text(account), subtitle: const Text('Lessons are available in offline guest mode.'))),
+    const SizedBox(height: 10),
+    _Area(title: 'Learning Studio', subtitle: 'Progress, AI tutor, question scanner, coding lab, mock practice, missions and voice read-aloud.', icon: Icons.auto_awesome, tap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvancedHub()))),
     const SizedBox(height: 10),
     _Area(title: 'Python', subtitle: 'Variables, operators, conditions, loops, collections, functions, files and stacks.', icon: Icons.code, tap: () => open(1)),
     const SizedBox(height: 10),
