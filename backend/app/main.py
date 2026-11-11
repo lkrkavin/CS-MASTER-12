@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import requests
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,11 @@ CURRICULUM = {
 
 class GoogleSignInRequest(BaseModel):
     id_token: str = Field(min_length=20, max_length=8192)
+
+
+class TutorRequest(BaseModel):
+    subject: str = Field(min_length=2, max_length=30)
+    question: str = Field(min_length=3, max_length=4000)
 
 def database_path() -> Path:
     return Path(os.getenv("DATABASE_PATH", "data/cs_master_12.db"))
@@ -95,6 +101,40 @@ def get_subject_curriculum(subject: str):
     if subject not in CURRICULUM:
         return {"error": "Unknown subject", "available": list(CURRICULUM)}
     return {"subject": subject, "units": CURRICULUM[subject]}
+
+
+@app.post("/api/v1/tutor")
+def tutor(payload: TutorRequest):
+    base_url = os.getenv("LLM_API_BASE_URL", "").rstrip("/")
+    api_key = os.getenv("LLM_API_KEY", "")
+    model = os.getenv("LLM_MODEL", "")
+    if not base_url or not api_key or not model:
+        raise HTTPException(status_code=503, detail="AI tutor is not configured. Set LLM_API_BASE_URL, LLM_API_KEY and LLM_MODEL on the backend.")
+    system_prompt = (
+        "You are a patient CBSE Class 12 Computer Science tutor. Stay within school-level Python, SQL/MySQL and Python-SQL integration. "
+        "Explain step by step, define technical terms, include a small correct example and a real-world school-related analogy. "
+        "For exam questions, show a concise board-style answer. If uncertain, say so."
+    )
+    try:
+        response = requests.post(
+            base_url + "/chat/completions",
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            json={"model": model, "temperature": 0.2, "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Subject: " + payload.subject + "\nQuestion: " + payload.question},
+            ]},
+            timeout=35,
+        )
+        response.raise_for_status()
+        data = response.json()
+        answer = data["choices"][0]["message"]["content"]
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("Empty tutor response")
+        return {"answer": answer.strip(), "subject": payload.subject, "model": model}
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="The configured AI provider could not be reached.") from exc
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="The AI provider returned an invalid response.") from exc
 
 @app.post("/api/v1/auth/google")
 def google_sign_in(payload: GoogleSignInRequest):

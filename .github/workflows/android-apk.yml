@@ -3,10 +3,12 @@ name: Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feat/learning-studio-final-verified]
     paths:
       - "app/**"
       - ".github/workflows/android-apk.yml"
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -35,21 +37,104 @@ jobs:
         working-directory: app
         run: flutter create --platforms=android --org com.lkrkavin --project-name cs_master_12 .
 
+      # google_mlkit_text_recognition references all five script option classes.
+      # The Flutter plugin's default Android dependency only bundles Latin;
+      # declare the four additional ML Kit artifacts to satisfy R8.
+      - name: Add ML Kit script dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          candidates = [
+              Path("app/android/app/build.gradle.kts"),
+              Path("app/android/app/build.gradle"),
+          ]
+          gradle_file = next((p for p in candidates if p.is_file()), None)
+          if gradle_file is None:
+              raise SystemExit("Could not find generated Android app Gradle file")
+
+          text = gradle_file.read_text()
+          artifacts = [
+              "text-recognition-chinese",
+              "text-recognition-devanagari",
+              "text-recognition-japanese",
+              "text-recognition-korean",
+          ]
+          missing = [a for a in artifacts if f"com.google.mlkit:{a}" not in text]
+          if missing:
+              if gradle_file.suffix == ".kts":
+                  lines = "\n".join(
+                      f'    implementation("com.google.mlkit:{a}:16.0.1")'
+                      for a in missing
+                  )
+              else:
+                  lines = "\n".join(
+                      f"    implementation 'com.google.mlkit:{a}:16.0.1'"
+                      for a in missing
+                  )
+              gradle_file.write_text(
+                  text.rstrip() + "\n\n// Additional Google ML Kit OCR script models\ndependencies {\n"
+                  + lines + "\n}\n"
+              )
+          print(f"Configured ML Kit OCR dependencies in {gradle_file}")
+          PY
+
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
 
-      - name: Build release APK
+      - name: Build Samsung ARM64 release APK
         working-directory: app
         run: >-
-          flutter build apk --release
+          flutter build apk --release --split-per-abi
           --dart-define=GOOGLE_WEB_CLIENT_ID=${{ vars.GOOGLE_WEB_CLIENT_ID }}
           --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
 
-      - name: Upload APK
+      - name: Report APK size
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          test -f "$apk"
+          bytes=$(stat -c%s "$apk")
+          mib=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b/1048576 }')
+          echo "ARM64 APK size: $mib MiB ($bytes bytes)"
+          if [ "$bytes" -ge 62914560 ]; then echo "ARM64 APK exceeds the 60 MiB target" >&2; exit 1; fi
+          {
+            echo "### Samsung-compatible ARM64 APK size"
+            echo "**$mib MiB** ($bytes bytes)"
+            echo "Measured ARM64 release APK size; build fails if it reaches 60 MiB."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report compatibility APK size
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk"
+          test -f "$apk"
+          bytes=$(stat -c%s "$apk")
+          mib=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b/1048576 }')
+          echo "ARMv7 compatibility APK size: $mib MiB ($bytes bytes)"
+          if [ "$bytes" -ge 62914560 ]; then echo "ARMv7 APK exceeds the 60 MiB target" >&2; exit 1; fi
+          {
+            echo "### ARMv7 compatibility APK size"
+            echo "**$mib MiB** ($bytes bytes)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Samsung ARM64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: cs-master-12-android-release
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          name: cs-master-12-android-arm64
+          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload broad-compatibility ARMv7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs-master-12-android-armv7
+          path: app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           if-no-files-found: error
           retention-days: 14
