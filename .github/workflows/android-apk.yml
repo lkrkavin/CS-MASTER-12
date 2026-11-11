@@ -108,10 +108,33 @@ jobs:
             echo "Measured ARM64 release APK size; build fails if it reaches 60 MiB."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload APK
+      - name: Report compatibility APK size
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk"
+          test -f "$apk"
+          bytes=$(stat -c%s "$apk")
+          mib=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b/1048576 }')
+          echo "ARMv7 compatibility APK size: $mib MiB ($bytes bytes)"
+          if [ "$bytes" -ge 62914560 ]; then echo "ARMv7 APK exceeds the 60 MiB target" >&2; exit 1; fi
+          {
+            echo "### ARMv7 compatibility APK size"
+            echo "**$mib MiB** ($bytes bytes)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Samsung ARM64 APK
         uses: actions/upload-artifact@v4
         with:
           name: cs-master-12-android-arm64
           path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload broad-compatibility ARMv7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs-master-12-android-armv7
+          path: app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           if-no-files-found: error
           retention-days: 14
